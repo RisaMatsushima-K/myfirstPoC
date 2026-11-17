@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>現場の困りごと仕分けボード</title>
+<style>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans JP",sans-serif;color:#202938;background:#f5f7fa}
+*{box-sizing:border-box}body{margin:0}.wrap{max-width:980px;margin:auto;padding:20px 16px 48px}
+header{padding:8px 2px 18px}h1{margin:0;font-size:28px}h2{font-size:19px;margin:0 0 12px}p{color:#667085;line-height:1.7}
+.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#e9efff;color:#3155b8;font-size:12px;font-weight:800;margin-bottom:8px}
+.card{background:#fff;border:1px solid #e4e7ec;border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 4px 18px #1018280a}
+textarea{width:100%;min-height:150px;resize:vertical;border:1px solid #cfd5df;border-radius:12px;padding:13px;font:inherit;line-height:1.6}
+button{width:100%;border:0;border-radius:11px;padding:13px 16px;margin-top:12px;background:#3155b8;color:#fff;font:inherit;font-weight:800;cursor:pointer}
+button:hover{filter:brightness(.96)}
+.meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.chip{padding:5px 9px;border-radius:999px;background:#f1f3f7;color:#555f70;font-size:12px}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.summary .box{padding:13px;border-radius:12px;background:#f7f8fb}.num{font-size:25px;font-weight:850}.small{font-size:12px;color:#667085}
+.board{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.lane{border:1px solid #e4e7ec;border-radius:14px;padding:13px;background:#fafbfc}.lane h3{font-size:15px;margin:0 0 9px}.lane p{font-size:12px;margin:0 0 10px}
+.item{background:#fff;border:1px solid #e4e7ec;border-radius:11px;padding:11px;margin-top:8px}.item strong{display:block;font-size:14px;margin-bottom:5px}.item .why{font-size:12px;color:#667085;line-height:1.5}.score{margin-top:7px;font-size:12px;font-weight:700}
+.empty{color:#98a2b3;font-size:13px;padding:8px}
+.note{background:#fff8e8;border:1px solid #f2d28b;border-radius:11px;padding:11px;font-size:12px;color:#6b571d;margin-top:12px}
+@media(max-width:700px){.summary{grid-template-columns:repeat(2,1fr)}.board{grid-template-columns:1fr}.wrap{padding:14px 12px 36px}h1{font-size:24px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<span class="badge">30分PoC / 外部APIなし</span>
+<h1>🛳️ 現場の困りごと仕分けボード</h1>
+<p>船員・現場から届いた声を貼り付けるだけ。キーワードベースの簡易判定で、改善の方向性と優先度を見える化します。</p>
+</header>
+
+<section class="card">
+<h2>困りごとを貼り付ける</h2>
+<textarea id="input" placeholder="例：
+入港前の書類を毎回メールで探すのに時間がかかる
+船内Wi-Fiが弱く、報告を送るのに時間がかかる
+港ごとに手順が違って新人が迷う"></textarea>
+<div class="meta"><span class="chip">架空データで試せます</span><span class="chip">1行＝1件として判定</span><span class="chip">判定結果は手入力データのみ</span></div>
+<button onclick="classify()">仕分けする</button>
+</section>
+
+<section class="card">
+<h2>優先度サマリー</h2>
+<div id="summary" class="summary"></div>
+</section>
+
+<section class="card">
+<h2>仕分け結果</h2>
+<div id="board" class="board"></div>
+<div class="note">※これはAI APIではなく、ページ内に設定したキーワードと簡易ルールによるデモ判定です。実運用では担当者が最終判断してください。</div>
+</section>
+</div>
+
+<script>
+const rules=[
+ {key:"すぐ改善",desc:"現場運用の工夫で短期間に改善できそう",words:["二度手間","時間がかかる","探す","手入力","紙","コピー","転記","毎回","面倒","忘れる"],base:4},
+ {key:"システム改修",desc:"既存システム・データ連携の改善が有効そう",words:["システム","画面","データ","連携","入力","検索","メール","Wi-Fi","アプリ","ログイン"],base:3},
+ {key:"ルール変更",desc:"拠点・船・担当者ごとのやり方を揃える余地がありそう",words:["手順","ルール","港ごと","船ごと","担当者ごと","承認","報告","書式","決まり","新人"],base:3},
+ {key:"AI活用候補",desc:"文章・判断・予測などAIで支援しやすそう",words:["要約","判断","予測","問い合わせ","翻訳","文章","検索","確認","分類","大量"],base:2}
+];
+
+const samples=[
+"入港前の書類を毎回メールで探すのに時間がかかる",
+"船内Wi-Fiが弱く、報告を送るのに時間がかかる",
+"港ごとに手順が違って新人が迷う",
+"毎日の運航報告を要約するのに時間がかかる",
+"荷主からの問い合わせ内容を担当者が毎回確認している"
+];
+
+function score(text,rule){
+ let hit=rule.words.filter(w=>text.toLowerCase().includes(w.toLowerCase())).length;
+ let score=rule.base+hit*2;
+ if(text.length>35) score++;
+ return Math.min(10,score);
+}
+function classify(){
+ const raw=document.getElementById("input").value.trim();
+ const lines=raw?raw.split(/\n+/).map(s=>s.trim()).filter(Boolean):samples;
+ const items=lines.map((text,i)=>{
+   const scored=rules.map(r=>({r,s:score(text,r)})).sort((a,b)=>b.s-a.s);
+   const top=scored[0];
+   return {id:i+1,text,cat:top.r.key,why:top.r.desc,score:top.s};
+ });
+ render(items);
+}
+function render(items){
+ const counts=Object.fromEntries(rules.map(r=>[r.key,0]));
+ items.forEach(x=>counts[x.cat]++);
+ document.getElementById("summary").innerHTML=rules.map(r=>'<div class="box"><div class="small">'+r.key+'</div><div class="num">'+counts[r.key]+'</div><div class="small">件</div></div>').join("");
+ document.getElementById("board").innerHTML=rules.map(r=>{
+   const list=items.filter(x=>x.cat===r.key);
+   return '<div class="lane"><h3>'+r.key+'</h3><p>'+r.desc+'</p>'+
+     (list.length?list.map(x=>'<div class="item"><strong>'+escapeHtml(x.text)+'</strong><div class="why">'+x.why+'</div><div class="score">優先度：'+x.score+'/10</div></div>').join(""):'<div class="empty">該当なし</div>')+
+     '</div>';
+ }).join("");
+}
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+classify();
+</script>
+</body>
+</html>
